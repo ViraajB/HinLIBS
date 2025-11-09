@@ -16,20 +16,15 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     setWindowTitle("HinLIBS");
 
-    // Account lists: show small cover icons
     if (ui->loanList) ui->loanList->setIconSize(QSize(40,55));
     if (ui->holdList) ui->holdList->setIconSize(QSize(40,55));
 
-    // Demo dataset
     populateItems();
 
-    // Build Browse page using Designer widgets (icon list + filter)
     initBrowseUi();
 
-    // Start on Login page
     ui->stackedWidget->setCurrentWidget(ui->pageLogin);
 
-    // ----- Navigation (UI-only) -----
     connect(ui->loginButton, &QPushButton::clicked, [this]{
         showPage(ui->stackedWidget->indexOf(ui->pageBrowse));
     });
@@ -44,7 +39,6 @@ MainWindow::MainWindow(QWidget *parent)
         showPage(ui->stackedWidget->indexOf(ui->pageBrowse));
     });
 
-    // Account page no-ops
     connect(ui->returnBtn, &QPushButton::clicked, [this]{
         statusBar()->showMessage("UI-only: would return selected items.", 1500);
     });
@@ -52,7 +46,6 @@ MainWindow::MainWindow(QWidget *parent)
         statusBar()->showMessage("UI-only: would cancel selected holds.", 1500);
     });
 
-    // Browse top bar buttons
     if (ui->browseAccountBtn) {
         connect(ui->browseAccountBtn, &QPushButton::clicked, [this]{
             ui->accountHeader->setText("<h3>Account: patronX — Patron</h3>");
@@ -85,11 +78,7 @@ void MainWindow::showPage(int idx) {
     ui->stackedWidget->setCurrentIndex(idx);
 }
 
-// --------------------------
-// Browse (icon list + filter)
-// --------------------------
 void MainWindow::initBrowseUi() {
-    // 1) Ensure filter box has items (in case it's empty in Designer)
     if (ui->browseFilterBox && ui->browseFilterBox->count() == 0) {
         ui->browseFilterBox->addItems({
             "All", "Fiction Book", "Non-Fiction Book", "Magazine", "Movie", "Video Game"
@@ -97,7 +86,6 @@ void MainWindow::initBrowseUi() {
     }
     currentFilterIndex_ = ui->browseFilterBox ? ui->browseFilterBox->currentIndex() : 0;
 
-    // 2) Set up the icon grid list
     if (ui->browseIconList) {
         ui->browseIconList->setViewMode(QListView::IconMode);
         ui->browseIconList->setFlow(QListView::LeftToRight);
@@ -106,9 +94,8 @@ void MainWindow::initBrowseUi() {
         ui->browseIconList->setMovement(QListView::Static);
         ui->browseIconList->setSpacing(8);
         ui->browseIconList->setIconSize(QSize(96,128));
-        ui->browseIconList->setGridSize(QSize(220,180)); // tile size; tweak to taste
+        ui->browseIconList->setGridSize(QSize(220,180));
 
-        // open item details on double-click or Enter
         connect(ui->browseIconList, &QListWidget::itemActivated, this, [this](QListWidgetItem* item){
             if (!item) return;
             int id = item->data(Qt::UserRole).toInt();
@@ -179,9 +166,7 @@ void MainWindow::populateBrowseIcons() {
     }
 }
 
-// --------------------------
-// Demo data & utils
-// --------------------------
+
 void MainWindow::populateItems() {
     items_.clear();
     auto add = [&](int id, const QString& t, const QString& a, const QString& d,

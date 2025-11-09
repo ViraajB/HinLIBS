@@ -9,7 +9,6 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-// Categories / formats for filtering
 enum class ItemFormat { FictionBook, NonFictionBook, Magazine, Movie, VideoGame };
 
 struct CatalogItem {
@@ -30,16 +29,13 @@ public:
 private:
     Ui::MainWindow *ui;
 
-    // Demo data
     QVector<CatalogItem> items_;
 
-    // Filter state (0 = All, 1..5 specific categories)
     int currentFilterIndex_ = 0;
 
-    // Helpers
     void showPage(int idx);
-    void initBrowseUi();                   // sets up icon list & filter (using Designer widgets)
-    void populateBrowseIcons();            // fills browseIconList based on filter
+    void initBrowseUi();
+    void populateBrowseIcons();
     bool passFilter(const CatalogItem& it) const;
 
     void populateItems();                  // demo content
