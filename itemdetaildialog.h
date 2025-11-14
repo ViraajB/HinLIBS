@@ -6,7 +6,7 @@ struct ItemBrief {
     int id;
     QString title;
     QString author;
-    QString details;
+    QString detail;
 };
 
 class QLabel;
@@ -25,7 +25,7 @@ signals:
 private:
     QLabel* title_;
     QLabel* author_;
-    QLabel* details_;
+    QLabel* detail_;
     QPushButton* borrowBtn_;
     QPushButton* holdBtn_;
 

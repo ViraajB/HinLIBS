@@ -10,7 +10,7 @@ ItemDetailDialog::ItemDetailDialog(QWidget* parent) : QDialog(parent) {
 
     title_ = new QLabel;   title_->setStyleSheet("font-size:16px; font-weight:700;");
     author_ = new QLabel;  author_->setStyleSheet("color:#444;");
-    details_ = new QLabel; details_->setWordWrap(true);
+    detail_ = new QLabel; detail_->setWordWrap(true);
 
     borrowBtn_ = new QPushButton("Borrow");
     holdBtn_   = new QPushButton("Place Hold");
@@ -26,7 +26,7 @@ ItemDetailDialog::ItemDetailDialog(QWidget* parent) : QDialog(parent) {
     root->addWidget(title_);
     root->addWidget(author_);
     root->addSpacing(6);
-    root->addWidget(details_);
+    root->addWidget(detail_);
     root->addStretch();
     root->addLayout(btnRow);
 
@@ -45,10 +45,11 @@ ItemDetailDialog::ItemDetailDialog(QWidget* parent) : QDialog(parent) {
 }
 
 void ItemDetailDialog::setItem(const ItemBrief& info) {
-
+    // ⭐ store for later so borrowRequested/holdRequested send correct data
+    current_ = info;
 
     title_->setText(info.title);
     author_->setText(QString("by %1").arg(info.author));
-    details_->setText(info.details);
-}
+    detail_->setText(info.detail);
 
+}

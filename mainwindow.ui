@@ -24,7 +24,7 @@
      </rect>
     </property>
     <property name="currentIndex">
-     <number>1</number>
+     <number>3</number>
     </property>
     <widget class="QWidget" name="pageLogin">
      <widget class="QLineEdit" name="usernameEdit">
@@ -109,7 +109,7 @@
       <widget class="QLabel" name="browseFilterLabel">
        <property name="geometry">
         <rect>
-         <x>20</x>
+         <x>0</x>
          <y>10</y>
          <width>61</width>
          <height>16</height>
@@ -122,7 +122,7 @@
       <widget class="QLabel" name="browseTitleLabel">
        <property name="geometry">
         <rect>
-         <x>360</x>
+         <x>350</x>
          <y>10</y>
          <width>121</width>
          <height>31</height>
@@ -135,7 +135,7 @@
       <widget class="QComboBox" name="browseFilterBox">
        <property name="geometry">
         <rect>
-         <x>70</x>
+         <x>60</x>
          <y>10</y>
          <width>101</width>
          <height>21</height>
@@ -166,6 +166,19 @@
        </property>
        <property name="text">
         <string>Logout</string>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="browseEditCatalogueBtn">
+       <property name="geometry">
+        <rect>
+         <x>460</x>
+         <y>10</y>
+         <width>101</width>
+         <height>31</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Edit Catalogue</string>
        </property>
       </widget>
      </widget>
@@ -238,10 +251,10 @@
      <widget class="QLabel" name="holdMsg">
       <property name="geometry">
        <rect>
-        <x>340</x>
-        <y>30</y>
-        <width>62</width>
-        <height>17</height>
+        <x>250</x>
+        <y>40</y>
+        <width>331</width>
+        <height>71</height>
        </rect>
       </property>
       <property name="text">
@@ -367,17 +380,17 @@
        <string>Back to Browse</string>
       </property>
      </widget>
-     <widget class="QLabel" name="accountHeader">
+     <widget class="QLabel" name="accountNameLabel">
       <property name="geometry">
        <rect>
         <x>10</x>
         <y>10</y>
-        <width>171</width>
-        <height>31</height>
+        <width>311</width>
+        <height>41</height>
        </rect>
       </property>
       <property name="text">
-       <string>userType</string>
+       <string>userName</string>
       </property>
      </widget>
     </widget>

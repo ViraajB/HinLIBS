@@ -10,25 +10,140 @@
 
 #include "itemdetaildialog.h"
 
+#include "LibrarySystem.h"
+#include "CatalogueControl.h"
+#include "BorrowControl.h"
+#include "PlaceHoldControl.h"
+#include "ReturnControl.h"
+#include "CancelHoldControl.h"
+#include "ViewAccountStatusControl.h"
+#include "Patron.h"
+#include "Item.h"
+#include "Loan.h"
+#include "Librarian.h"
+
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+
     setWindowTitle("HinLIBS");
+    editCatalogueBtn_ = ui->browseEditCatalogueBtn;
+    if (editCatalogueBtn_) {
+        editCatalogueBtn_->setVisible(false);
+        connect(editCatalogueBtn_, &QPushButton::clicked, [this]{
+            statusBar()->showMessage("Edit Catalogue (not implemented yet).", 2000);
+        });
+    }
+
 
     if (ui->loanList) ui->loanList->setIconSize(QSize(40,55));
     if (ui->holdList) ui->holdList->setIconSize(QSize(40,55));
 
-    populateItems();
+    // Backend objects
+    librarySystem_ = new LibrarySystem();
+    catalogueControl_ = new CatalogueControl(librarySystem_, this);
+    borrowControl_ = new BorrowControl(librarySystem_, this);
+    placeHoldControl_ = new PlaceHoldControl(librarySystem_, this);
+    returnControl_ = new ReturnControl(librarySystem_, this);
+    cancelHoldControl_ = new CancelHoldControl(librarySystem_, this);
+    viewAccountStatusControl_ = new ViewAccountStatusControl(librarySystem_, this);
+
+    // Catalogue -> UI
+    connect(catalogueControl_, &CatalogueControl::catalogueDataReady,
+            this, &MainWindow::onCatalogueDataReady);
+
+    // Borrow signals
+    connect(borrowControl_, &BorrowControl::borrowSuccessful,
+            this, &MainWindow::onBorrowSuccess);
+    connect(borrowControl_, &BorrowControl::borrowFailed,
+            this, &MainWindow::onBorrowFailed);
+
+    // Hold signals
+    connect(placeHoldControl_, &PlaceHoldControl::placeHoldSuccessful,
+            this, &MainWindow::onPlaceHoldSuccess);
+    connect(placeHoldControl_, &PlaceHoldControl::placeHoldFailed,
+            this, &MainWindow::onPlaceHoldFailed);
+
+    // Return signals
+    connect(returnControl_, &ReturnControl::returnSuccessful,
+            this, &MainWindow::onReturnSuccess);
+    connect(returnControl_, &ReturnControl::returnFailed,
+            this, &MainWindow::onReturnFailed);
+
+    // Cancel hold signals
+    connect(cancelHoldControl_, &CancelHoldControl::cancelHoldSuccessful,
+            this, &MainWindow::onCancelHoldSuccess);
+    connect(cancelHoldControl_, &CancelHoldControl::cancelHoldFailed,
+            this, &MainWindow::onCancelHoldFailed);
+
+    // Account status
+    connect(viewAccountStatusControl_,
+            &ViewAccountStatusControl::accountStatusRetrieved,
+            this, &MainWindow::onAccountStatusRetrieved);
 
     initBrowseUi();
 
     ui->stackedWidget->setCurrentWidget(ui->pageLogin);
 
+    // Login
     connect(ui->loginButton, &QPushButton::clicked, [this]{
+        QString username;
+        if (ui->usernameEdit) {
+            username = ui->usernameEdit->text().trimmed();
+        }
+
+        if (username.isEmpty()) {
+            statusBar()->showMessage("Enter username like patron1..patron5 or librarian1", 3000);
+            return;
+        }
+
+        QString wanted = username.toLower();
+
+        auto users = librarySystem_->getUsers();
+        User* matchedUser = nullptr;
+
+        for (auto* u : users) {
+            QString backendName = QString::fromStdString(u->getName()).toLower();
+            if (backendName == wanted) {
+                matchedUser = u;
+                break;
+            }
+        }
+
+        if (!matchedUser) {
+            statusBar()->showMessage("Unknown user. Use patron1..patron5 or librarian1", 4000);
+            return;
+        }
+
+        librarySystem_->setCurrentUser(matchedUser);
+
+        if (auto* p = dynamic_cast<Patron*>(matchedUser)) {
+            activeRole_ = ActiveRole::Patron;
+            setWindowTitle(QString("HinLIBS - Patron (%1)")
+                               .arg(QString::fromStdString(p->getName())));
+            if (editCatalogueBtn_) editCatalogueBtn_->setVisible(false);
+        }
+        else if (auto* lib = dynamic_cast<Librarian*>(matchedUser)) {
+            activeRole_ = ActiveRole::Librarian;
+            setWindowTitle(QString("HinLIBS - Librarian (%1)")
+                               .arg(QString::fromStdString(lib->getName())));
+            if (editCatalogueBtn_) editCatalogueBtn_->setVisible(true);
+        }
+        else {
+            activeRole_ = ActiveRole::None;
+            setWindowTitle("HinLIBS");
+            if (editCatalogueBtn_) editCatalogueBtn_->setVisible(false);
+        }
+
+
         showPage(ui->stackedWidget->indexOf(ui->pageBrowse));
+        catalogueControl_->requestCatalogueData();
     });
 
+
+    //  Page back buttons
     connect(ui->checkoutBackBtn, &QPushButton::clicked, [this]{
         showPage(ui->stackedWidget->indexOf(ui->pageBrowse));
     });
@@ -39,36 +154,41 @@ MainWindow::MainWindow(QWidget *parent)
         showPage(ui->stackedWidget->indexOf(ui->pageBrowse));
     });
 
+    //Return & Cancel hold buttons
     connect(ui->returnBtn, &QPushButton::clicked, [this]{
-        statusBar()->showMessage("UI-only: would return selected items.", 1500);
-    });
-    connect(ui->cancelHoldBtn, &QPushButton::clicked, [this]{
-        statusBar()->showMessage("UI-only: would cancel selected holds.", 1500);
+        if (!ui->loanList) return;
+        auto selected = ui->loanList->selectedItems();
+        for (auto* it : selected) {
+            int id = it->data(Qt::UserRole).toInt();
+            returnControl_->returnRequested(id);
+        }
     });
 
+    connect(ui->cancelHoldBtn, &QPushButton::clicked, [this]{
+        if (!ui->holdList) return;
+        auto selected = ui->holdList->selectedItems();
+        for (auto* it : selected) {
+            int id = it->data(Qt::UserRole).toInt();
+            cancelHoldControl_->cancelHoldRequested(id);
+        }
+    });
+
+    // Browse → Account page
     if (ui->browseAccountBtn) {
         connect(ui->browseAccountBtn, &QPushButton::clicked, [this]{
-            ui->accountHeader->setText("<h3>Account: patronX — Patron</h3>");
-            ui->loanList->clear();
-            ui->holdList->clear();
-
-            auto addWithIcon = [&](QListWidget* w, const QString& title, const QString& right){
-                QPixmap pm = coverForTitle(title).scaled(
-                    w->iconSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                auto* it = new QListWidgetItem(QIcon(pm), QString("%1 %2").arg(title, right));
-                w->addItem(it);
-            };
-
-            addWithIcon(ui->loanList, "The Blue Planet", "(due 2025-12-31)");
-            addWithIcon(ui->holdList, "Interstellar", "(pos 1)");
-
-            showPage(ui->stackedWidget->indexOf(ui->pageAccount));
+            // trigger backend to fetch current account status
+            viewAccountStatusControl_->viewAccountStatusRequested();
         });
     }
     if (ui->browseLogoutBtn) {
         connect(ui->browseLogoutBtn, &QPushButton::clicked, [this]{
+            librarySystem_->setCurrentUser(nullptr);
+            activeRole_ = ActiveRole::None;
+            setWindowTitle("HinLIBS");
+            if (editCatalogueBtn_) editCatalogueBtn_->setVisible(false);
             showPage(ui->stackedWidget->indexOf(ui->pageLogin));
         });
+
     }
 }
 
@@ -78,6 +198,8 @@ void MainWindow::showPage(int idx) {
     ui->stackedWidget->setCurrentIndex(idx);
 }
 
+//Browse / catalogue UI
+
 void MainWindow::initBrowseUi() {
     if (ui->browseFilterBox && ui->browseFilterBox->count() == 0) {
         ui->browseFilterBox->addItems({
@@ -85,6 +207,16 @@ void MainWindow::initBrowseUi() {
         });
     }
     currentFilterIndex_ = ui->browseFilterBox ? ui->browseFilterBox->currentIndex() : 0;
+    if (ui->browseFilterBox) {
+        connect(ui->browseFilterBox,
+                QOverload<int>::of(&QComboBox::currentIndexChanged),
+                this,
+                [this](int idx){
+                    currentFilterIndex_ = idx;
+                    populateBrowseIcons();      // re-filter & redraw
+                });
+    }
+
 
     if (ui->browseIconList) {
         ui->browseIconList->setViewMode(QListView::IconMode);
@@ -106,41 +238,68 @@ void MainWindow::initBrowseUi() {
             ItemDetailDialog dlg(this);
             dlg.setItem({found->id, found->title, found->author, found->details});
 
-            connect(&dlg, &ItemDetailDialog::borrowRequested, [this](const ItemBrief& info){
-                ui->checkoutMsg->setText(
-                    QString("Checkout preview (UI-only)\n"
-                            "Title: %1\n"
-                            "Due date: 2025-12-31\n"
-                            "Borrows left: 3").arg(info.title));
-                showPage(ui->stackedWidget->indexOf(ui->pageCheckout));
-            });
-            connect(&dlg, &ItemDetailDialog::holdRequested, [this](const ItemBrief& info){
-                ui->holdMsg->setText(
-                    QString("Hold preview (UI-only)\n"
-                            "Title: %1\n"
-                            "Your position in queue: 1").arg(info.title));
-                showPage(ui->stackedWidget->indexOf(ui->pageHold));
-            });
+            // Borrow
+            connect(&dlg, &ItemDetailDialog::borrowRequested,
+                    [this](const ItemBrief& info){
+                        borrowControl_->borrowRequested(info.id);
+                    });
+
+            // Hold
+            connect(&dlg, &ItemDetailDialog::holdRequested,
+                    [this](const ItemBrief& info){
+                        placeHoldControl_->placeHoldRequested(info.id);
+                    });
 
             dlg.exec();
         });
     }
+}
 
-    // 3) Populate the list now
-    populateBrowseIcons();
+// Backend -> UI catalogue
+void MainWindow::onCatalogueDataReady(const QVector<Item*>& items)
+{
+    items_.clear();
 
-    // 4) Filter changes
-    if (ui->browseFilterBox) {
-        connect(ui->browseFilterBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                this, [this](int idx){
-                    currentFilterIndex_ = idx;
-                    populateBrowseIcons();
-                });
+    for (Item* backendItem : items) {
+        if (!backendItem) continue;
+
+        CatalogItem ci;
+        ci.id     = backendItem->getId();
+        ci.title  = QString::fromStdString(backendItem->getTitle());
+        ci.author = QString::fromStdString(backendItem->getAuthor());
+        ci.details = QString::fromStdString(backendItem->getDetail());
+
+        QString fmtStr = QString::fromStdString(backendItem->getFormat());
+        ci.details = QString("Format: %1").arg(fmtStr);
+
+        ItemFormat fmt = ItemFormat::FictionBook;
+        QColor col(205, 231, 255);
+
+        if (fmtStr.contains("Non", Qt::CaseInsensitive)) {
+            fmt = ItemFormat::NonFictionBook;
+            col = QColor(209, 250, 229);
+        } else if (fmtStr.contains("Magazine", Qt::CaseInsensitive)) {
+            fmt = ItemFormat::Magazine;
+            col = QColor(233, 213, 255);
+        } else if (fmtStr.contains("Movie", Qt::CaseInsensitive)) {
+            fmt = ItemFormat::Movie;
+            col = QColor(255, 235, 205);
+        } else if (fmtStr.contains("Video", Qt::CaseInsensitive)
+                   || fmtStr.contains("Game", Qt::CaseInsensitive)) {
+            fmt = ItemFormat::VideoGame;
+            col = QColor(253, 230, 138);
+        }
+
+        ci.format = fmt;
+        ci.cover  = makeCover(col, ci.title.left(2).toUpper());
+
+        items_.push_back(ci);
     }
+
+    populateBrowseIcons();
 }
 
 bool MainWindow::passFilter(const CatalogItem& it) const {
-    // 0=All, 1=Fiction, 2=Non-Fiction, 3=Magazine, 4=Movie, 5=Video Game
     switch (currentFilterIndex_) {
     case 0: return true;
     case 1: return it.format == ItemFormat::FictionBook;
@@ -161,67 +320,11 @@ void MainWindow::populateBrowseIcons() {
 
         QIcon icon(it.cover);
         auto* li = new QListWidgetItem(icon, it.title);
-        li->setData(Qt::UserRole, it.id); // store id for lookup later
+        li->setData(Qt::UserRole, it.id);
         ui->browseIconList->addItem(li);
     }
 }
 
-
-void MainWindow::populateItems() {
-    items_.clear();
-    auto add = [&](int id, const QString& t, const QString& a, const QString& d,
-                   const QColor& col, ItemFormat fmt){
-        items_.push_back({id, t, a, d, makeCover(col, t.left(2).toUpper()), fmt});
-    };
-
-    add(1,  "City of Glass",            "Paul Auster",
-        "Postmodern detective novel set in NYC.",
-        QColor("#CDE7FF"), ItemFormat::FictionBook);
-
-    add(2,  "Interstellar",             "Christopher Nolan",
-        "Sci-fi epic. Genre: Sci-Fi, Rating: PG-13.",
-        QColor("#FFEBCD"), ItemFormat::Movie);
-
-    add(3,  "Galactic Weekly #12",      "Editorial",
-        "Magazine, Issue #12 (2025-10).",
-        QColor("#E9D5FF"), ItemFormat::Magazine);
-
-    add(4,  "The Blue Planet",          "J. Smith",
-        "Non-Fiction. Dewey 551.46 (Oceans).",
-        QColor("#D1FAE5"), ItemFormat::NonFictionBook);
-
-    add(5,  "Sky Legends",              "Dev Studio",
-        "Video Game. Genre: Action; Rating: T.",
-        QColor("#FDE68A"), ItemFormat::VideoGame);
-
-    add(6,  "A Brief History of Time",  "Stephen Hawking",
-        "Cosmology classic.",
-        QColor("#FECACA"), ItemFormat::NonFictionBook);
-
-    add(7,  "The Pragmatic Programmer", "Hunt & Thomas",
-        "Software craftsmanship.",
-        QColor("#FDE2E4"), ItemFormat::NonFictionBook);
-
-    add(8,  "Clean Code",               "Robert C. Martin",
-        "Readable, maintainable code.",
-        QColor("#E6FFFA"), ItemFormat::NonFictionBook);
-
-    add(9,  "Design Patterns",          "GoF",
-        "Reusable OOP patterns.",
-        QColor("#FFF1F2"), ItemFormat::NonFictionBook);
-
-    add(10, "Structure & Interpretation","Abelson & Sussman",
-        "SICP.",
-        QColor("#F0F9FF"), ItemFormat::NonFictionBook);
-
-    add(11, "Deep Work",                "Cal Newport",
-        "Focus, productivity.",
-        QColor("#FFF7ED"), ItemFormat::NonFictionBook);
-
-    add(12, "Thinking, Fast and Slow",  "Daniel Kahneman",
-        "System 1 / System 2.",
-        QColor("#F1F5F9"), ItemFormat::NonFictionBook);
-}
 
 QPixmap MainWindow::makeCover(const QColor& c, const QString& text) {
     QPixmap pm(160, 220);
@@ -241,4 +344,218 @@ QPixmap MainWindow::coverForTitle(const QString& title) const {
     for (const auto& it : items_)
         if (it.title == title) return it.cover;
     return QPixmap();
+}
+
+//Borrow result handlers
+
+void MainWindow::onBorrowSuccess(const QString& msg)
+{
+    // Get current patron and find the last loan (or the loan for any item)
+    Patron* p = dynamic_cast<Patron*>(librarySystem_->getCurrentUser());
+    QString extra;
+
+    if (p) {
+        auto loans = p->getActiveLoans();
+        if (!loans.empty()) {
+            Loan* last = loans.back();
+            int days = last->calculateDaysRemaining();
+            int remaining = LibrarySystem::MAX_LOANS_PER_PATRON - static_cast<int>(loans.size());
+            extra = QString("\nDue in %1 day(s).\nBorrows left: %2")
+                        .arg(days).arg(remaining);
+        }
+    }
+
+    ui->checkoutMsg->setText(msg + extra);
+    showPage(ui->stackedWidget->indexOf(ui->pageCheckout));
+}
+
+void MainWindow::onBorrowFailed(const QString& reason)
+{
+    ui->checkoutMsg->setText("Borrow failed:\n" + reason);
+    showPage(ui->stackedWidget->indexOf(ui->pageCheckout));
+}
+
+//Hold result handler
+
+void MainWindow::onPlaceHoldSuccess(const QString& msg)
+{
+    Patron* p = dynamic_cast<Patron*>(librarySystem_->getCurrentUser());
+    int pos = -1;
+
+    if (p) {
+        auto holds = p->getActiveHolds();
+        if (!holds.empty()) {
+            Item* last = holds.back();
+            pos = last->getQueuePosition(p);
+        }
+    }
+
+    QString extra;
+    if (pos > 0) extra = QString("\nYour position in queue: %1").arg(pos);
+
+    ui->holdMsg->setText(msg + extra);
+    showPage(ui->stackedWidget->indexOf(ui->pageHold));
+}
+
+void MainWindow::onPlaceHoldFailed(const QString& reason)
+{
+    ui->holdMsg->setText("Hold failed:\n" + reason);
+    showPage(ui->stackedWidget->indexOf(ui->pageHold));
+}
+
+// Return / Cancel hold handlers
+
+void MainWindow::onReturnSuccess(const QString& msg)
+{
+    statusBar()->showMessage(msg, 2000);
+    viewAccountStatusControl_->viewAccountStatusRequested();
+}
+
+void MainWindow::onReturnFailed(const QString& reason)
+{
+    statusBar()->showMessage("Return failed: " + reason, 3000);
+}
+
+void MainWindow::onCancelHoldSuccess(const QString& msg)
+{
+    statusBar()->showMessage(msg, 2000);
+    viewAccountStatusControl_->viewAccountStatusRequested();
+}
+
+void MainWindow::onCancelHoldFailed(const QString& reason)
+{
+    statusBar()->showMessage("Cancel hold failed: " + reason, 3000);
+}
+
+// Account status handler
+
+void MainWindow::onAccountStatusRetrieved(std::vector<Loan*> loans,
+                                          std::vector<Item*> holds)
+{
+    User* currentUser = librarySystem_->getCurrentUser();
+    Patron* p = dynamic_cast<Patron*>(currentUser);
+
+    ui->loanList->clear();
+    ui->holdList->clear();
+
+    // Patron mode: current behaviour
+    if (activeRole_ == ActiveRole::Patron && p) {
+        QString header = QString("<h3>Account: %1 — Patron</h3>")
+                             .arg(QString::fromStdString(p->getName()));
+        ui->accountNameLabel->setText(header);
+
+        // Active loans
+        for (Loan* loan : loans) {
+            if (!loan) continue;
+            Item* it = loan->getItem();
+            if (!it) continue;
+
+            QString title = QString::fromStdString(it->getTitle());
+            int days = loan->calculateDaysRemaining();
+            QString right = QString("(due in %1 day(s))").arg(days);
+
+            QPixmap pm = coverForTitle(title).scaled(
+                ui->loanList->iconSize(),
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation
+                );
+            auto* li = new QListWidgetItem(QIcon(pm),
+                                           QString("%1 %2").arg(title, right));
+            li->setData(Qt::UserRole, it->getId());     // ⭐ still store ID for return
+            ui->loanList->addItem(li);
+        }
+
+        // Active holds
+        for (Item* it : holds) {
+            if (!it) continue;
+            QString title = QString::fromStdString(it->getTitle());
+            int pos = it->getQueuePosition(p);
+            QString right = QString("(pos %1)").arg(pos);
+
+            QPixmap pm = coverForTitle(title).scaled(
+                ui->holdList->iconSize(),
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation
+                );
+            auto* li = new QListWidgetItem(QIcon(pm),
+                                           QString("%1 %2").arg(title, right));
+            li->setData(Qt::UserRole, it->getId());  // ⭐ still store ID for cancel hold
+            ui->holdList->addItem(li);
+        }
+    }
+    // Librarian mode: all patrons' loans/holds
+    else if (activeRole_ == ActiveRole::Librarian) {
+        QString name = currentUser
+                           ? QString::fromStdString(currentUser->getName())
+                           : QString("Librarian");
+        QString header = QString("<h3>Account: %1 — Librarian (All Patrons)</h3>")
+                             .arg(name);
+        ui->accountNameLabel->setText(header);
+
+        auto users = librarySystem_->getUsers();
+
+        // All loans from all patrons
+        for (User* u : users) {
+            Patron* patron = dynamic_cast<Patron*>(u);
+            if (!patron) continue;
+
+            QString patronName = QString::fromStdString(patron->getName());
+            auto patronLoans = patron->getActiveLoans();
+
+            for (Loan* loan : patronLoans) {
+                if (!loan) continue;
+                Item* it = loan->getItem();
+                if (!it) continue;
+
+                QString title = QString::fromStdString(it->getTitle());
+                int days = loan->calculateDaysRemaining();
+                QString right = QString("(due in %1 day(s))").arg(days);
+
+                QPixmap pm = coverForTitle(title).scaled(
+                    ui->loanList->iconSize(),
+                    Qt::KeepAspectRatio,
+                    Qt::SmoothTransformation
+                    );
+                auto* li = new QListWidgetItem(
+                    QIcon(pm),
+                    QString("%1 — %2 %3").arg(patronName, title, right)
+                    );
+
+                ui->loanList->addItem(li);
+            }
+        }
+
+        // All holds from all patrons
+        for (User* u : users) {
+            Patron* patron = dynamic_cast<Patron*>(u);
+            if (!patron) continue;
+
+            QString patronName = QString::fromStdString(patron->getName());
+            auto patronHolds = patron->getActiveHolds();
+
+            for (Item* it : patronHolds) {
+                if (!it) continue;
+
+                QString title = QString::fromStdString(it->getTitle());
+                int pos = it->getQueuePosition(patron);
+                QString right = QString("(pos %1)").arg(pos);
+
+                QPixmap pm = coverForTitle(title).scaled(
+                    ui->holdList->iconSize(),
+                    Qt::KeepAspectRatio,
+                    Qt::SmoothTransformation
+                    );
+                auto* li = new QListWidgetItem(
+                    QIcon(pm),
+                    QString("%1 — %2 %3").arg(patronName, title, right)
+                    );
+                ui->holdList->addItem(li);
+            }
+        }
+    }
+    else {
+        ui->accountNameLabel->setText("<h3>Account: (not logged in)</h3>");
+    }
+
+    showPage(ui->stackedWidget->indexOf(ui->pageAccount));
 }
