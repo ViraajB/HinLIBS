@@ -60,12 +60,15 @@ void BorrowControl::borrowRequested(int itemId) {
     // If you are at front of queue, remove your hold
     if (!holdQueue.empty() && holdQueue.front() == currentPatron) {
         requestedItem->removeHold(currentPatron);
+        currentPatron->removeItemFromHoldQueue(requestedItem);
     }
 
     // Create loan, link to this patron only
     Loan* newLoan = new Loan(requestedItem, currentPatron);
     currentPatron->addItemToLoanList(newLoan);
     requestedItem->setAvailabilityStatus(false);   // 🔐 now unavailable to others
+
+
 
     emit borrowSuccessful("Item borrowed successfully.");
 }

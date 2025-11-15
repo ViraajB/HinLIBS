@@ -21,7 +21,11 @@
 #include "Item.h"
 #include "Loan.h"
 #include "Librarian.h"
-
+#include "FictionBook.h"
+#include "NonFictionBook.h"
+#include "Magazine.h"
+#include "Movie.h"
+#include "VideoGame.h"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow)
@@ -260,37 +264,84 @@ void MainWindow::onCatalogueDataReady(const QVector<Item*>& items)
 {
     items_.clear();
 
-    for (Item* backendItem : items) {
-        if (!backendItem) continue;
+    for (Item* baseItem : items) {
+        if (!baseItem) continue;
 
         CatalogItem ci;
-        ci.id     = backendItem->getId();
-        ci.title  = QString::fromStdString(backendItem->getTitle());
-        ci.author = QString::fromStdString(backendItem->getAuthor());
-        ci.details = QString::fromStdString(backendItem->getDetail());
+        ci.id     = baseItem->getId();
+        ci.title  = QString::fromStdString(baseItem->getTitle());
+        ci.author = QString::fromStdString(baseItem->getAuthor());
+        ci.details = QString::fromStdString(baseItem->getDetail());
 
-        QString fmtStr = QString::fromStdString(backendItem->getFormat());
+
+        QString fmtStr = QString::fromStdString(baseItem->getFormat());
         ci.details = QString("Format: %1").arg(fmtStr);
 
-        ItemFormat fmt = ItemFormat::FictionBook;
-        QColor col(205, 231, 255);
+        QString details;
+        ItemFormat fmt;
 
-        if (fmtStr.contains("Non", Qt::CaseInsensitive)) {
-            fmt = ItemFormat::NonFictionBook;
-            col = QColor(209, 250, 229);
-        } else if (fmtStr.contains("Magazine", Qt::CaseInsensitive)) {
+        // std::string avail = baseItem->getAvailabilityStatus() ? "Availaible" : "Not Availaible";
+
+        if (auto* nf = dynamic_cast<NonFictionBook*>(baseItem)) {
+            fmt     = ItemFormat::NonFictionBook;
+            details = QString("Non-Fiction Book\nDewey: %1")
+                          .arg(QString::fromStdString(nf->getDeweyDecimal()));
+        }
+        else if (auto* mag = dynamic_cast<Magazine*>(baseItem)) {
             fmt = ItemFormat::Magazine;
-            col = QColor(233, 213, 255);
-        } else if (fmtStr.contains("Movie", Qt::CaseInsensitive)) {
-            fmt = ItemFormat::Movie;
-            col = QColor(255, 235, 205);
-        } else if (fmtStr.contains("Video", Qt::CaseInsensitive)
-                   || fmtStr.contains("Game", Qt::CaseInsensitive)) {
-            fmt = ItemFormat::VideoGame;
-            col = QColor(253, 230, 138);
+
+            bool avail = baseItem->getAvailabilityStatus();    // bool -> string
+            QString availStr = avail ? "Available" : "On loan";
+
+            details = QString("Magazine\nIssue #: %1\nPublication date: %2\nAvailability: %3")
+                          .arg(mag->getIssueNumber())
+                          .arg(QString::fromStdString(mag->getPublicationDate()))
+                          .arg(availStr);
+        }
+        else if (auto* mov = dynamic_cast<Movie*>(baseItem)) {
+            fmt     = ItemFormat::Movie;
+            details = QString("Movie\nGenre: %1\nRating: %2")
+                          .arg(QString::fromStdString(mov->getGenre()))
+                          .arg(QString::fromStdString(mov->getRating()));
+        }
+        else if (auto* vg = dynamic_cast<VideoGame*>(baseItem)) {
+            fmt     = ItemFormat::VideoGame;
+            details = QString("Video Game\nGenre: %1\nRating: %2")
+                          .arg(QString::fromStdString(vg->getGenre()))
+                          .arg(QString::fromStdString(vg->getRating()));
+        }
+        else if (dynamic_cast<FictionBook*>(baseItem)) {
+            fmt     = ItemFormat::FictionBook;
+            details = "Fiction Book";
+        } else {
+            // fallback
+            fmt     = ItemFormat::FictionBook;
+            details = QString::fromStdString(baseItem->getFormat());
         }
 
-        ci.format = fmt;
+        ci.details = details;
+        ci.format  = fmt;
+        QColor col;   // ✅ declare it once
+
+        switch (fmt) {
+        case ItemFormat::FictionBook:
+            col = QColor(205, 231, 255);
+            break;
+        case ItemFormat::NonFictionBook:
+            col = QColor(209, 250, 229);
+            break;
+        case ItemFormat::Magazine:
+            col = QColor(233, 213, 255);
+            break;
+        case ItemFormat::Movie:
+            col = QColor(255, 235, 205);
+            break;
+        case ItemFormat::VideoGame:
+            col = QColor(253, 230, 138);
+            break;
+        }
+
+
         ci.cover  = makeCover(col, ci.title.left(2).toUpper());
 
         items_.push_back(ci);
